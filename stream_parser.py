@@ -16,6 +16,13 @@ class CyaStreamParser:
         self.current_tag = None
         self.printed_length = 0
 
+    def finalize(self):
+        """Called when stream ends. Handle any unclosed tags (e.g., <call> stopped by stop token)."""
+        if self.current_tag == "call":
+            # Stream ended with unclosed <call> - this means stop token triggered
+            return self.handleTagFinish(self.buffer)
+        return None
+
     def process_chunk(self, chunk):
         self.buffer += chunk
         result = None

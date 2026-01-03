@@ -32,15 +32,11 @@ class CYA_GAME():
                 tool_result = self._execute_tool(result["tool_call"])
                 self._handle_tool_result(result["tool_call"], tool_result)
             else:
-                try:
-                    user_input = input("\n> ")
-                    if user_input.lower() in ["quit", "exit", "q"]:
-                        print("Thanks for playing!")
-                        break
-                    self.messages.append({"role": "user", "content": user_input})
-                except (KeyboardInterrupt, EOFError):
-                    print("\nThanks for playing!")
-                    break
+                # LLM didn't use ask() tool - remind it to prompt the player
+                self.messages.append({
+                    "role": "user",
+                    "content": "[System] You did not take an action. You should call a tool to pass the turn to the user or the system."
+                })
 
     def _ask_ollama(self):
         full_response = ""
@@ -54,9 +50,10 @@ class CYA_GAME():
                     "messages": self.messages,
                     "stream": True,
                     "options": {
-                        "temperature": 0.4,
+                        "temperature": 0.7,
                         "num_predict": 1024,
-                        "num_ctx": 8192
+                        "num_ctx": 8192,
+                        "stop": ["</call>"]
                     }
                 },
                 timeout=120,
@@ -72,8 +69,16 @@ class CYA_GAME():
                     if result and result.get("tool_call"):
                         tool_call = result["tool_call"]
 
-        # Append assistant response to history
+        # Check for unclosed <call> tag (stop token triggered before </call>)
+        if not tool_call:
+            final_result = self.stream_parser.finalize()
+            if final_result and final_result.get("tool_call"):
+                tool_call = final_result["tool_call"]
+
+        # Append assistant response to history (add </call> if it was truncated)
         if full_response:
+            if tool_call:
+                full_response += "</call>"
             self.messages.append({"role": "assistant", "content": full_response})
 
         return {"tool_call": tool_call}
