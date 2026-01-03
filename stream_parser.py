@@ -1,22 +1,31 @@
+import re
+
 CYAN = "\033[96m"
 MAGENTA = "\033[95m"
-RESET = "\033[0m"
+RESET_COLOR = "\033[0m"
 
 class CyaStreamParser:
     def __init__(self):
         self.buffer = ""
         self.current_tag = None
-        self.printed_length = 0  # Track how much we've already printed
+        self.printed_length = 0
+
+    def reset(self):
+        """Reset parser state for a new response."""
+        self.buffer = ""
+        self.current_tag = None
+        self.printed_length = 0
 
     def process_chunk(self, chunk):
         self.buffer += chunk
+        result = None
 
         # Check for opening tags
         if "<thinking>" in self.buffer and self.current_tag != "thinking":
             self.current_tag = "thinking"
             self.buffer = self.buffer.split("<thinking>")[-1]
             self.printed_length = 0
-            print(f"\n{CYAN} ", end="", flush=True)
+            print(f"\n{CYAN}", end="", flush=True)
         elif "<call>" in self.buffer and self.current_tag != "call":
             self.current_tag = "call"
             self.buffer = self.buffer.split("<call>")[-1]
@@ -31,10 +40,12 @@ class CyaStreamParser:
         # Check for closing tags
         if self.current_tag and f'</{self.current_tag}>' in self.buffer:
             content = self.buffer.split(f"</{self.current_tag}>")[0]
-            self.handleTagFinish(content)
+            result = self.handleTagFinish(content)
         else:
             # Stream output while inside a tag
             self.streamCurrentBuffer()
+
+        return result
 
     def streamCurrentBuffer(self):
         if self.current_tag is None:
@@ -65,17 +76,15 @@ class CyaStreamParser:
 
         # Reset color and add newline
         if self.current_tag in ["thinking", "call"]:
-            print(f"{RESET}")
+            print(f"{RESET_COLOR}")
         else:
             print()
 
         result = None
         if self.current_tag == "call":
-            result = {"role": "ASSISTANT", "content": f"<call>{content}</call>"}
-        elif self.current_tag == "thinking":
-            result = {"role": "ASSISTANT", "content": f"<thinking>{content}</thinking>"}
-        elif self.current_tag == "narrate":
-            result = {"role": "ASSISTANT", "content": f"<narrate>{content}</narrate>"}
+            tool_call = self._parse_tool_call(content)
+            result = {"tool_call": tool_call}
+        # thinking and narrate don't need special handling
 
         # Reset state for next tag
         remainder = self.buffer.split(f"</{self.current_tag}>", 1)[-1]
@@ -84,3 +93,14 @@ class CyaStreamParser:
         self.printed_length = 0
 
         return result
+
+    def _parse_tool_call(self, content):
+        """Parse tool call like 'rollDice(d20)' or 'ask(what is your name)'"""
+        # Match: toolName(args) where args can contain anything except unbalanced parens
+        match = re.match(r"(\w+)\((.+)\)$", content.strip(), re.DOTALL)
+        if match:
+            return {
+                "tool": match.group(1),
+                "args": match.group(2).strip()
+            }
+        return {"tool": content.strip(), "args": ""}
