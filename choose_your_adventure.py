@@ -29,7 +29,7 @@ class CYA_GAME():
         self._ask_ollama()
 
     def _ask_ollama(self):
-        response = requests.post(
+        with requests.post(
                 f"{BASE_URL}/api/generate",
                 json={
                     "model": MODEL,
@@ -42,14 +42,15 @@ class CYA_GAME():
                         "num_ctx": 8192
                     }
                 },
-                timeout=30
-            )
-        for line in response.iter_lines():
-            if not line:
-                continue
-            chunk = json.loads(line)
-            text_piece = chunk.get("response", "")
-            self.stream_parser.process_chunk(text_piece)
+                timeout=120,
+                stream=True
+            ) as response:
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    text_piece = chunk.get("response", "")
+                    self.stream_parser.process_chunk(text_piece)
     
     def save_narrator_msg(self, output):
         narrator_msg = "<NARRATOR>" + json.dumps(output) + "</NARRATOR>"
