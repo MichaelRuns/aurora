@@ -44,6 +44,11 @@ class CyaStreamParser:
             self.printed_length = 0
             print("\n", end="", flush=True)
 
+        # Strip nested opening tags from buffer (LLM error) - do this once per chunk
+        if self.current_tag:
+            opening_tag = f"<{self.current_tag}>"
+            self.buffer = self.buffer.replace(opening_tag, "")
+
         # Check for closing tags
         if self.current_tag and f'</{self.current_tag}>' in self.buffer:
             content = self.buffer.split(f"</{self.current_tag}>")[0]
@@ -65,8 +70,8 @@ class CyaStreamParser:
 
         # Check if we might be in the middle of a closing tag
         for i in range(1, len(closing_tag)):
-            if self.buffer.endswith(closing_tag[:i]):
-                safe_content = self.buffer[:-i]
+            if safe_content.endswith(closing_tag[:i]):
+                safe_content = safe_content[:-i]
                 break
 
         # Print only new content

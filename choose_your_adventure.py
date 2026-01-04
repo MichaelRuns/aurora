@@ -5,7 +5,7 @@ import re
 import random
 import requests
 import json
-from CYA_PROMPTS import SYSTEM_PROMPT
+from CYA_PROMPTS import SYSTEM_PROMPT, ART_SYSTEM_PROMPT
 from stream_parser import CyaStreamParser
 
 
@@ -20,7 +20,7 @@ class CYA_GAME():
     def __init__(self):
         self.messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "The game has started. Decide upon a unique and interesting setting."}
+            {"role": "user", "content": "The game has started. Decide upon a unique and interesting setting. You may choose to ask the play once about what kind of story they want"}
         ]
         self.stream_parser = CyaStreamParser()
 
@@ -91,6 +91,10 @@ class CYA_GAME():
             return self._roll_dice(args)
         elif tool_name == "ask":
             return self._ask_player(args)
+        elif tool_name == "choice":
+            return self._choice_player(args)
+        elif tool_name == "art":
+            return self._generate_art(args)
         else:
             return f"Unknown tool: {tool_name}"
 
@@ -114,12 +118,64 @@ class CYA_GAME():
         return str(total)
 
     def _ask_player(self, question):
-        print(f"\n❓ DM asks: {question}")
+        print(f"\n❓ {question}")
         try:
             answer = input("> ")
             return answer
         except (KeyboardInterrupt, EOFError):
             return ""
+
+    def _choice_player(self, args):
+        parts = [p.strip() for p in args.split("|")]
+        if len(parts) < 3:
+            # Fallback to ask if not enough options
+            return self._ask_player(args)
+
+        question = parts[0]
+        options = parts[1:]
+
+        print(f"\n❓ {question}")
+        for i, option in enumerate(options, 1):
+            print(f"  {i}. {option}")
+
+        try:
+            while True:
+                choice = input("> ").strip()
+                # Accept number or text
+                if choice.isdigit():
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(options):
+                        return options[idx]
+                    print(f"Please enter a number between 1 and {len(options)}")
+                else:
+                    # Accept text input as custom response
+                    return choice
+        except (KeyboardInterrupt, EOFError):
+            return options[0] if options else ""
+
+    def _generate_art(self, description):
+        print("\n🎨 Generating art...\n")
+        try:
+            response = requests.post(
+                f"{BASE_URL}/api/chat",
+                json={
+                    "model": MODEL,
+                    "messages": [
+                        {"role": "system", "content": ART_SYSTEM_PROMPT},
+                        {"role": "user", "content": description}
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.9, "num_predict": 512}
+                },
+                timeout=60
+            )
+            art = response.json()["message"]["content"]
+            print(art)
+            print()
+            return "[ASCII art displayed]"
+        except Exception as e:
+            print(f"Failed to generate art: {e}")
+            return "[Art generation failed]"
 
     def _handle_tool_result(self, tool_call, result):
         tool_name = tool_call.get("tool", "unknown")
